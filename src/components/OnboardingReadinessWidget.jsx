@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ONBOARDING_FIELDS } from "../constants/onboardingFields.js";
 import {
   displayValue,
@@ -34,6 +34,15 @@ import SuggestedAction from "./SuggestedAction.jsx";
 import { ErrorState, LoadingState } from "./WidgetState.jsx";
 
 const OUTSIDE_DEALS_ERROR = "Please open this widget from a Deal record page.";
+
+// Zoho sends PageLoad within a second or two. If nothing arrives, the SDK
+// handshake with the CRM frame did not complete and waiting will not help.
+const PAGE_LOAD_TIMEOUT_MS = 15000;
+const PAGE_LOAD_TIMEOUT_ERROR =
+  "Zoho CRM did not send the Deal context (PageLoad) within 15 seconds. " +
+  "The widget loaded, but the CRM handshake did not complete. Check that the " +
+  "widget's Base URL in Setup > Developer Space > Widgets exactly matches the " +
+  "hosted URL, then reload the Deal record.";
 
 export default function OnboardingReadinessWidget() {
   const sdkAvailable = Boolean(
@@ -126,14 +135,20 @@ export default function OnboardingReadinessWidget() {
     [fetchOnboardingTask, fetchReadinessRules],
   );
 
+  const pageLoadReceived = useRef(false);
+
   useEffect(() => {
     // Register PageLoad before initializing the Zoho Embedded App SDK.
     const zoho = getZohoSdk();
     if (!zoho?.embeddedApp?.on || !zoho?.embeddedApp?.init) {
-      return;
+      return undefined;
     }
 
+    let timeoutId = 0;
+
     zoho.embeddedApp.on("PageLoad", (pageData) => {
+      pageLoadReceived.current = true;
+      window.clearTimeout(timeoutId);
       console.log("Onboarding Readiness PageLoad data:", pageData);
 
       if (pageData?.Entity !== "Deals") {
@@ -155,6 +170,20 @@ export default function OnboardingReadinessWidget() {
 
     try {
       zoho.embeddedApp.init();
+      console.log("Onboarding Readiness SDK initialized, awaiting PageLoad…");
+
+      timeoutId = window.setTimeout(() => {
+        if (pageLoadReceived.current) return;
+
+        console.error(
+          "Onboarding Readiness: no PageLoad event after",
+          PAGE_LOAD_TIMEOUT_MS,
+          "ms. Widget origin:",
+          window.location.origin,
+        );
+        setError(PAGE_LOAD_TIMEOUT_ERROR);
+        setIsInitializing(false);
+      }, PAGE_LOAD_TIMEOUT_MS);
     } catch (initializationError) {
       console.error("Onboarding Readiness SDK initialization error:", initializationError);
       queueMicrotask(() => {
@@ -162,6 +191,8 @@ export default function OnboardingReadinessWidget() {
         setIsInitializing(false);
       });
     }
+
+    return () => window.clearTimeout(timeoutId);
   }, [fetchDeal]);
 
   const readiness = useMemo(() => {
