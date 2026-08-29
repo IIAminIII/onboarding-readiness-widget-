@@ -1,5 +1,6 @@
+// Confirmed against the CRM org: the module is registered singular.
 export const READINESS_RULES_MODULE =
-  "easyclientonboardingtracker__Onboarding_Readiness_Rules";
+  "easyclientonboardingtracker__Onboarding_Readiness_Rule";
 
 export const READINESS_RULES_SOURCE = "Onboarding Readiness Rules";
 

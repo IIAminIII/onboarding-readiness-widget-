@@ -1,122 +1,131 @@
 // Check Onboarding Readiness
 // Deluge function for the Easy Client Onboarding Tracker extension.
-// Kept here for reference; it is deployed in Zoho CRM / Sigma, not from this repo.
+// Deployed in Zoho CRM / Sigma, not from this repo. Kept here as the
+// authoritative copy of the working version.
+//
+// Two things this depends on:
+//   1. The rules module API name is SINGULAR: ..._Onboarding_Readiness_Rule
+//   2. Record IDs must be passed to the CRM functions as long, not text.
 
 dealId = "";
-if(deal != null && deal.get("id") != null)
+if(deal != null)
 {
-	dealId = deal.get("id").toString();
-}
-else if(deal != null && deal.get("Deals.ID") != null)
-{
-	dealId = deal.get("Deals.ID").toString();
+	if(deal.get("id") != null)
+	{
+		dealId = deal.get("id").toString();
+	}
+	else if(deal.get("Deals.ID") != null)
+	{
+		dealId = deal.get("Deals.ID").toString();
+	}
 }
 if(dealId == "")
 {
 	return "Deal ID is empty. Cannot check onboarding readiness.";
 }
 // Fetch Deal
-dealResp = zoho.crm.getRecordById("Deals",dealId);
+dealResp = zoho.crm.getRecordById("Deals",dealId.toLong());
 if(dealResp == null || dealResp.get("id") == null)
 {
 	return "Deal not found.";
 }
-// Rule module API name. The module may be registered singular or plural, so
-// try both rather than assuming one.
-candidateModules = List();
-candidateModules.add("easyclientonboardingtracker__Onboarding_Readiness_Rules");
-candidateModules.add("easyclientonboardingtracker__Onboarding_Readiness_Rule");
-ruleModuleApiName = "";
-rulesResp = null;
-lastError = "";
-for each  candidate in candidateModules
+// Rule module API name
+ruleModuleApiName = "easyclientonboardingtracker__Onboarding_Readiness_Rule";
+// Fetch readiness rules
+rulesResponse = zoho.crm.getRecords(ruleModuleApiName,1,200);
+// Normalize rules response
+rulesList = List();
+if(rulesResponse != null)
 {
-	if(ruleModuleApiName == "")
+	responseText = rulesResponse.toString();
+	if(responseText.contains("data"))
 	{
-		attempt = zoho.crm.getRecords(candidate,1,200);
-		if(attempt != null)
+		if(rulesResponse.get("data") != null)
 		{
-			attemptText = attempt.toString();
-			// getRecords returns a List on success and an error Map on failure.
-			// Iterating the error Map would loop over its keys as text and crash
-			// on rule.get(...).
-			if(attemptText.startsWith("{"))
-			{
-				lastError = candidate + " -> " + attemptText;
-			}
-			else
-			{
-				ruleModuleApiName = candidate;
-				rulesResp = attempt;
-			}
-		}
-		else
-		{
-			lastError = candidate + " -> no response";
+			rulesList = rulesResponse.get("data");
 		}
 	}
-}
-if(ruleModuleApiName == "")
-{
-	return "Could not read the readiness rules module. Last error: " + lastError;
-}
-if(rulesResp.size() == 0)
-{
-	return "No onboarding readiness rules found. Please create active rule records first.";
-}
-// Flatten the response into record maps. getRecords can hand back a list of
-// maps, a list of lists, or an error payload; calling .get("field") on a list
-// fails with "required data type of '[BIGINT]'".
-ruleRecords = List();
-for each  item in rulesResp
-{
-	itemText = item.toString();
-	if(itemText.startsWith("{"))
+	else
 	{
-		ruleRecords.add(item);
-	}
-	else if(itemText.startsWith("["))
-	{
-		for each  inner in item
-		{
-			if(inner.toString().startsWith("{"))
-			{
-				ruleRecords.add(inner);
-			}
-		}
+		rulesList = rulesResponse;
 	}
 }
-if(ruleRecords.size() == 0)
+if(rulesList == null || rulesList.size() == 0)
 {
-	return "The rules module \"" + ruleModuleApiName + "\" returned no readable rule records. Raw response: " + rulesResp.toString();
+	return "No onboarding readiness rules found. Please create rule records first.";
 }
 score = 0;
 totalScore = 0;
 missingFields = List();
 activeRulesCount = 0;
+debugRulesChecked = 0;
 // Loop through rules
-for each  rule in ruleRecords
+for each  ruleRecord in rulesList
 {
-	isActive = ifnull(rule.get("easyclientonboardingtracker__Active"),false);
-	isRequired = ifnull(rule.get("easyclientonboardingtracker__Required"),false);
-	targetModule = ifnull(rule.get("easyclientonboardingtracker__Target_Module"),"");
-	fieldApiName = ifnull(rule.get("easyclientonboardingtracker__Field_API_Name"),"");
-	fieldLabel = ifnull(rule.get("easyclientonboardingtracker__Field_Label"),"");
-	missingMessage = ifnull(rule.get("easyclientonboardingtracker__Missing_Field_Message"),"");
-	scoreWeight = ifnull(rule.get("easyclientonboardingtracker__Score_Weight"),0);
-	// Checkbox fields can arrive as booleans or as text, depending on how the
-	// record was created (UI, API or import).
-	activeText = isActive.toString().trim();
-	requiredText = isRequired.toString().trim();
-	isActiveFlag = activeText == "true" || activeText == "True" || activeText == "TRUE" || activeText == "1";
-	isRequiredFlag = requiredText == "true" || requiredText == "True" || requiredText == "TRUE" || requiredText == "1";
-	targetText = targetModule.toString().trim();
-	isDealsRule = targetText == "Deals" || targetText == "deals" || targetText == "DEALS";
-	if(isActiveFlag && isRequiredFlag && isDealsRule && fieldApiName != "")
+	ruleText = ruleRecord.toString();
+	isActive = false;
+	isRequired = false;
+	targetModule = "";
+	fieldApiName = "";
+	fieldLabel = "";
+	missingMessage = "";
+	scoreWeight = 0;
+	if(ruleText.contains("easyclientonboardingtracker__Active"))
+	{
+		isActive = ifnull(ruleRecord.get("easyclientonboardingtracker__Active"),false);
+	}
+	if(ruleText.contains("easyclientonboardingtracker__Required"))
+	{
+		isRequired = ifnull(ruleRecord.get("easyclientonboardingtracker__Required"),false);
+	}
+	if(ruleText.contains("easyclientonboardingtracker__Target_Module"))
+	{
+		targetModule = ifnull(ruleRecord.get("easyclientonboardingtracker__Target_Module"),"");
+	}
+	if(ruleText.contains("easyclientonboardingtracker__Field_API_Name"))
+	{
+		fieldApiName = ifnull(ruleRecord.get("easyclientonboardingtracker__Field_API_Name"),"");
+	}
+	if(ruleText.contains("easyclientonboardingtracker__Field_Label"))
+	{
+		fieldLabel = ifnull(ruleRecord.get("easyclientonboardingtracker__Field_Label"),"");
+	}
+	if(ruleText.contains("easyclientonboardingtracker__Missing_Field_Message"))
+	{
+		missingMessage = ifnull(ruleRecord.get("easyclientonboardingtracker__Missing_Field_Message"),"");
+	}
+	if(ruleText.contains("easyclientonboardingtracker__Score_Weight"))
+	{
+		scoreWeight = ifnull(ruleRecord.get("easyclientonboardingtracker__Score_Weight"),0);
+	}
+	isActiveText = isActive.toString().toLowerCase();
+	isRequiredText = isRequired.toString().toLowerCase();
+	targetModuleText = targetModule.toString().trim();
+	isActiveValid = false;
+	isRequiredValid = false;
+	targetModuleValid = false;
+	if(isActive == true || isActiveText == "true" || isActiveText == "yes" || isActiveText == "1")
+	{
+		isActiveValid = true;
+	}
+	if(isRequired == true || isRequiredText == "true" || isRequiredText == "yes" || isRequiredText == "1")
+	{
+		isRequiredValid = true;
+	}
+	if(targetModuleText == "Deals" || targetModuleText == "Deal" || targetModuleText == "Potentials")
+	{
+		targetModuleValid = true;
+	}
+	if(isActiveValid == true && isRequiredValid == true && targetModuleValid == true && fieldApiName != "")
 	{
 		activeRulesCount = activeRulesCount + 1;
 		totalScore = totalScore + scoreWeight;
-		fieldValue = dealResp.get(fieldApiName);
+		fieldValue = null;
+		dealText = dealResp.toString();
+		if(dealText.contains(fieldApiName))
+		{
+			fieldValue = dealResp.get(fieldApiName);
+		}
 		isValueFilled = false;
 		if(fieldValue != null)
 		{
@@ -146,13 +155,17 @@ for each  rule in ruleRecords
 			}
 		}
 	}
+	else
+	{
+		debugRulesChecked = debugRulesChecked + 1;
+	}
 }
 if(totalScore == 0)
 {
-	return "No active required readiness rules found for Deals. Checked " + ruleRecords.size() + " rule record(s) in " + ruleModuleApiName + ".";
+	return "No active required readiness rules found for Deals. Please check that rule records have Active checked, Required checked, Target Module set to Deals, and Field API Name filled.";
 }
 // Calculate readiness percentage
-readinessScore = ((score * 100.0) / totalScore).round(0);
+readinessScore = ((score * 100) / totalScore).round(0);
 // Decide readiness level
 readinessLevel = "";
 onboardingStatus = "";
@@ -171,7 +184,7 @@ else
 	readinessLevel = "Incomplete";
 	onboardingStatus = "Missing Information";
 }
-// Prepare missing fields text as comma-separated
+// Prepare missing fields text
 missingText = "";
 for each  fieldName in missingFields
 {
@@ -190,13 +203,7 @@ updateMap.put("easyclientonboardingtracker__Onboarding_Readiness_Score",readines
 updateMap.put("easyclientonboardingtracker__Onboarding_Readiness_Level",readinessLevel);
 updateMap.put("easyclientonboardingtracker__Missing_Onboarding_Fields",missingText);
 updateMap.put("easyclientonboardingtracker__Onboarding_Status",onboardingStatus);
-updateMap.put("easyclientonboardingtracker__Last_Readiness_Check",zoho.currenttime);
-updateResp = zoho.crm.updateRecord("Deals",dealId,updateMap);
-// A failed update returns an error map instead of the updated record.
-if(updateResp == null || updateResp.get("id") == null)
-{
-	return "Readiness was calculated (Score: " + readinessScore + "%) but the Deal could not be updated. CRM said: " + updateResp;
-}
+updateResp = zoho.crm.updateRecord("Deals",dealId.toLong(),updateMap);
 // Final button message
 if(missingText == "")
 {

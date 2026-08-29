@@ -91,7 +91,7 @@ Created → Task Completed → Onboarding Completed.
 
 ### Onboarding Readiness Rules module
 
-Module API name: `easyclientonboardingtracker__Onboarding_Readiness_Rules`
+Module API name: `easyclientonboardingtracker__Onboarding_Readiness_Rule` (singular)
 
 | Field API name | Purpose |
 | --- | --- |

@@ -89,7 +89,8 @@ The widget reads the admin rule module with `ZOHO.CRM.API.getAllRecords` and dis
 that drive the score. It never evaluates or recalculates the score itself -- the readiness values
 shown elsewhere are the saved CRM values.
 
-The configured module API name is `easyclientonboardingtracker__Onboarding_Readiness_Rules`. Because
+The module API name is `easyclientonboardingtracker__Onboarding_Readiness_Rule` -- **singular**, which
+is how Zoho registered it. Because
 an extension module can be registered under a different namespace, the widget first resolves the
 real name through `ZOHO.CRM.META.getModules()`, matching the configured name exactly, then any
 module ending in `Onboarding_Readiness_Rules`, then any name normalising to "readinessrules". A
