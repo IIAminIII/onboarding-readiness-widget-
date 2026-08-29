@@ -81,13 +81,16 @@ async function resolveRulesModule() {
     .map((module) => String(module?.api_name ?? "").trim())
     .filter(Boolean);
 
-  const suffix = READINESS_RULES_MODULE.split("__").pop().toLowerCase();
+  // Compare without underscores, case, or a trailing plural "s": the module is
+  // often registered singular ("..._Onboarding_Readiness_Rule").
+  const normalize = (value) =>
+    String(value).toLowerCase().replace(/_/g, "").replace(/s$/, "");
+  const target = normalize(READINESS_RULES_MODULE.split("__").pop());
+
   const match =
     apiNames.find((name) => name === READINESS_RULES_MODULE) ||
-    apiNames.find((name) => name.toLowerCase().endsWith(suffix)) ||
-    apiNames.find((name) =>
-      name.toLowerCase().replace(/_/g, "").includes("readinessrules"),
-    );
+    apiNames.find((name) => normalize(name).endsWith(target)) ||
+    apiNames.find((name) => normalize(name).includes("readinessrule"));
 
   if (!match) {
     console.warn(

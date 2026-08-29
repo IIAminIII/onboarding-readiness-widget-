@@ -21,20 +21,44 @@ if(dealResp == null || dealResp.get("id") == null)
 {
 	return "Deal not found.";
 }
-// Rule module API name
-ruleModuleApiName = "easyclientonboardingtracker__Onboarding_Readiness_Rules";
-// Fetch readiness rules
-rulesResp = zoho.crm.getRecords(ruleModuleApiName,1,200);
-if(rulesResp == null)
+// Rule module API name. The module may be registered singular or plural, so
+// try both rather than assuming one.
+candidateModules = List();
+candidateModules.add("easyclientonboardingtracker__Onboarding_Readiness_Rules");
+candidateModules.add("easyclientonboardingtracker__Onboarding_Readiness_Rule");
+ruleModuleApiName = "";
+rulesResp = null;
+lastError = "";
+for each  candidate in candidateModules
 {
-	return "No response from the readiness rules module (" + ruleModuleApiName + ").";
+	if(ruleModuleApiName == "")
+	{
+		attempt = zoho.crm.getRecords(candidate,1,200);
+		if(attempt != null)
+		{
+			attemptText = attempt.toString();
+			// getRecords returns a List on success and an error Map on failure.
+			// Iterating the error Map would loop over its keys as text and crash
+			// on rule.get(...).
+			if(attemptText.startsWith("{"))
+			{
+				lastError = candidate + " -> " + attemptText;
+			}
+			else
+			{
+				ruleModuleApiName = candidate;
+				rulesResp = attempt;
+			}
+		}
+		else
+		{
+			lastError = candidate + " -> no response";
+		}
+	}
 }
-// getRecords returns a List on success and an error Map on failure. Iterating
-// the error Map would loop over its keys as text and crash on rule.get(...).
-rulesText = rulesResp.toString();
-if(rulesText.startsWith("{"))
+if(ruleModuleApiName == "")
 {
-	return "Could not read the rules module \"" + ruleModuleApiName + "\". CRM said: " + rulesText;
+	return "Could not read the readiness rules module. Last error: " + lastError;
 }
 if(rulesResp.size() == 0)
 {
