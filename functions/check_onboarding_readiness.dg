@@ -1,0 +1,158 @@
+// Check Onboarding Readiness
+// Deluge function for the Easy Client Onboarding Tracker extension.
+// Kept here for reference; it is deployed in Zoho CRM / Sigma, not from this repo.
+
+dealId = "";
+if(deal != null && deal.get("id") != null)
+{
+	dealId = deal.get("id").toString();
+}
+else if(deal != null && deal.get("Deals.ID") != null)
+{
+	dealId = deal.get("Deals.ID").toString();
+}
+if(dealId == "")
+{
+	return "Deal ID is empty. Cannot check onboarding readiness.";
+}
+// Fetch Deal
+dealResp = zoho.crm.getRecordById("Deals",dealId);
+if(dealResp == null || dealResp.get("id") == null)
+{
+	return "Deal not found.";
+}
+// Rule module API name
+ruleModuleApiName = "easyclientonboardingtracker__Onboarding_Readiness_Rules";
+// Fetch readiness rules
+rulesResp = zoho.crm.getRecords(ruleModuleApiName,1,200);
+if(rulesResp == null)
+{
+	return "No response from the readiness rules module (" + ruleModuleApiName + ").";
+}
+// getRecords returns a List on success and an error Map on failure. Iterating
+// the error Map would loop over its keys as text and crash on rule.get(...).
+rulesText = rulesResp.toString();
+if(rulesText.startsWith("{"))
+{
+	return "Could not read the rules module \"" + ruleModuleApiName + "\". CRM said: " + rulesText;
+}
+if(rulesResp.size() == 0)
+{
+	return "No onboarding readiness rules found. Please create active rule records first.";
+}
+score = 0;
+totalScore = 0;
+missingFields = List();
+activeRulesCount = 0;
+// Loop through rules
+for each  rule in rulesResp
+{
+	isActive = ifnull(rule.get("easyclientonboardingtracker__Active"),false);
+	isRequired = ifnull(rule.get("easyclientonboardingtracker__Required"),false);
+	targetModule = ifnull(rule.get("easyclientonboardingtracker__Target_Module"),"");
+	fieldApiName = ifnull(rule.get("easyclientonboardingtracker__Field_API_Name"),"");
+	fieldLabel = ifnull(rule.get("easyclientonboardingtracker__Field_Label"),"");
+	missingMessage = ifnull(rule.get("easyclientonboardingtracker__Missing_Field_Message"),"");
+	scoreWeight = ifnull(rule.get("easyclientonboardingtracker__Score_Weight"),0);
+	// Checkbox fields can arrive as booleans or as text, depending on how the
+	// record was created (UI, API or import).
+	activeText = isActive.toString().trim();
+	requiredText = isRequired.toString().trim();
+	isActiveFlag = activeText == "true" || activeText == "True" || activeText == "TRUE" || activeText == "1";
+	isRequiredFlag = requiredText == "true" || requiredText == "True" || requiredText == "TRUE" || requiredText == "1";
+	targetText = targetModule.toString().trim();
+	isDealsRule = targetText == "Deals" || targetText == "deals" || targetText == "DEALS";
+	if(isActiveFlag && isRequiredFlag && isDealsRule && fieldApiName != "")
+	{
+		activeRulesCount = activeRulesCount + 1;
+		totalScore = totalScore + scoreWeight;
+		fieldValue = dealResp.get(fieldApiName);
+		isValueFilled = false;
+		if(fieldValue != null)
+		{
+			fieldValueText = fieldValue.toString();
+			if(fieldValueText != "" && fieldValueText != "null" && fieldValueText != "{}" && fieldValueText != "[]")
+			{
+				isValueFilled = true;
+			}
+		}
+		if(isValueFilled == true)
+		{
+			score = score + scoreWeight;
+		}
+		else
+		{
+			if(missingMessage != "")
+			{
+				missingFields.add(missingMessage);
+			}
+			else if(fieldLabel != "")
+			{
+				missingFields.add(fieldLabel);
+			}
+			else
+			{
+				missingFields.add(fieldApiName);
+			}
+		}
+	}
+}
+if(totalScore == 0)
+{
+	return "No active required readiness rules found for Deals. Checked " + rulesResp.size() + " rule record(s).";
+}
+// Calculate readiness percentage
+readinessScore = ((score * 100.0) / totalScore).round(0);
+// Decide readiness level
+readinessLevel = "";
+onboardingStatus = "";
+if(readinessScore >= 90)
+{
+	readinessLevel = "Ready";
+	onboardingStatus = "Ready for Onboarding";
+}
+else if(readinessScore >= 60)
+{
+	readinessLevel = "Needs Review";
+	onboardingStatus = "Missing Information";
+}
+else
+{
+	readinessLevel = "Incomplete";
+	onboardingStatus = "Missing Information";
+}
+// Prepare missing fields text as comma-separated
+missingText = "";
+for each  fieldName in missingFields
+{
+	if(missingText == "")
+	{
+		missingText = fieldName;
+	}
+	else
+	{
+		missingText = missingText + ", " + fieldName;
+	}
+}
+// Update Deal
+updateMap = Map();
+updateMap.put("easyclientonboardingtracker__Onboarding_Readiness_Score",readinessScore);
+updateMap.put("easyclientonboardingtracker__Onboarding_Readiness_Level",readinessLevel);
+updateMap.put("easyclientonboardingtracker__Missing_Onboarding_Fields",missingText);
+updateMap.put("easyclientonboardingtracker__Onboarding_Status",onboardingStatus);
+updateMap.put("easyclientonboardingtracker__Last_Readiness_Check",zoho.currenttime);
+updateResp = zoho.crm.updateRecord("Deals",dealId,updateMap);
+// A failed update returns an error map instead of the updated record.
+if(updateResp == null || updateResp.get("id") == null)
+{
+	return "Readiness was calculated (Score: " + readinessScore + "%) but the Deal could not be updated. CRM said: " + updateResp;
+}
+// Final button message
+if(missingText == "")
+{
+	return "Onboarding readiness checked successfully. Score: " + readinessScore + "%. Level: " + readinessLevel + ". Active Rules: " + activeRulesCount + ". No missing fields. This Deal is ready for onboarding.";
+}
+else
+{
+	return "Onboarding readiness checked successfully. Score: " + readinessScore + "%. Level: " + readinessLevel + ". Active Rules: " + activeRulesCount + ". Missing Fields: " + missingText;
+}
