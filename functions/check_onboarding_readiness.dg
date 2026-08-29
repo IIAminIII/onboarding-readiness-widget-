@@ -64,12 +64,38 @@ if(rulesResp.size() == 0)
 {
 	return "No onboarding readiness rules found. Please create active rule records first.";
 }
+// Flatten the response into record maps. getRecords can hand back a list of
+// maps, a list of lists, or an error payload; calling .get("field") on a list
+// fails with "required data type of '[BIGINT]'".
+ruleRecords = List();
+for each  item in rulesResp
+{
+	itemText = item.toString();
+	if(itemText.startsWith("{"))
+	{
+		ruleRecords.add(item);
+	}
+	else if(itemText.startsWith("["))
+	{
+		for each  inner in item
+		{
+			if(inner.toString().startsWith("{"))
+			{
+				ruleRecords.add(inner);
+			}
+		}
+	}
+}
+if(ruleRecords.size() == 0)
+{
+	return "The rules module \"" + ruleModuleApiName + "\" returned no readable rule records. Raw response: " + rulesResp.toString();
+}
 score = 0;
 totalScore = 0;
 missingFields = List();
 activeRulesCount = 0;
 // Loop through rules
-for each  rule in rulesResp
+for each  rule in ruleRecords
 {
 	isActive = ifnull(rule.get("easyclientonboardingtracker__Active"),false);
 	isRequired = ifnull(rule.get("easyclientonboardingtracker__Required"),false);
@@ -123,7 +149,7 @@ for each  rule in rulesResp
 }
 if(totalScore == 0)
 {
-	return "No active required readiness rules found for Deals. Checked " + rulesResp.size() + " rule record(s).";
+	return "No active required readiness rules found for Deals. Checked " + ruleRecords.size() + " rule record(s) in " + ruleModuleApiName + ".";
 }
 // Calculate readiness percentage
 readinessScore = ((score * 100.0) / totalScore).round(0);
