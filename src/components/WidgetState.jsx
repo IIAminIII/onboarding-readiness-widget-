@@ -10,7 +10,9 @@ export function LoadingState() {
   );
 }
 
-export function ErrorState({ message }) {
+export function ErrorState({ message, details }) {
+  const rows = Array.isArray(details) ? details : [];
+
   return (
     <main className="widget-shell widget-shell--centered" role="alert">
       <div className="state-card state-card--error">
@@ -19,6 +21,17 @@ export function ErrorState({ message }) {
         </span>
         <h1>Unable to load readiness</h1>
         <p>{message}</p>
+
+        {rows.length > 0 ? (
+          <dl className="diagnostics">
+            {rows.map((row) => (
+              <div className="diagnostics__row" key={row.label}>
+                <dt>{row.label}</dt>
+                <dd>{row.value}</dd>
+              </div>
+            ))}
+          </dl>
+        ) : null}
       </div>
     </main>
   );

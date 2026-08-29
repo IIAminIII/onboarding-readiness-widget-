@@ -40,9 +40,30 @@ const OUTSIDE_DEALS_ERROR = "Please open this widget from a Deal record page.";
 const PAGE_LOAD_TIMEOUT_MS = 15000;
 const PAGE_LOAD_TIMEOUT_ERROR =
   "Zoho CRM did not send the Deal context (PageLoad) within 15 seconds. " +
-  "The widget loaded, but the CRM handshake did not complete. Check that the " +
-  "widget's Base URL in Setup > Developer Space > Widgets exactly matches the " +
-  "hosted URL, then reload the Deal record.";
+  "The widget loaded, but the CRM handshake did not complete. " +
+  "Send the details below when reporting this.";
+
+function collectDiagnostics() {
+  const zoho = getZohoSdk();
+
+  return [
+    { label: "Widget URL", value: window.location.href },
+    {
+      label: "In iframe",
+      value: window.self !== window.top ? "yes" : "no (not embedded)",
+    },
+    { label: "Parent page", value: document.referrer || "(none)" },
+    { label: "ZOHO object", value: zoho ? "present" : "MISSING" },
+    {
+      label: "embeddedApp.init",
+      value: typeof zoho?.embeddedApp?.init === "function" ? "present" : "MISSING",
+    },
+    {
+      label: "CRM.API",
+      value: zoho?.CRM?.API ? "present" : "MISSING",
+    },
+  ];
+}
 
 export default function OnboardingReadinessWidget() {
   const sdkAvailable = Boolean(
@@ -58,6 +79,7 @@ export default function OnboardingReadinessWidget() {
   const [rulesError, setRulesError] = useState("");
   const [isInitializing, setIsInitializing] = useState(sdkAvailable);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [diagnostics, setDiagnostics] = useState(null);
   const [error, setError] = useState(
     sdkAvailable
       ? ""
@@ -175,12 +197,14 @@ export default function OnboardingReadinessWidget() {
       timeoutId = window.setTimeout(() => {
         if (pageLoadReceived.current) return;
 
+        const info = collectDiagnostics();
         console.error(
           "Onboarding Readiness: no PageLoad event after",
           PAGE_LOAD_TIMEOUT_MS,
-          "ms. Widget origin:",
-          window.location.origin,
+          "ms.",
+          info,
         );
+        setDiagnostics(info);
         setError(PAGE_LOAD_TIMEOUT_ERROR);
         setIsInitializing(false);
       }, PAGE_LOAD_TIMEOUT_MS);
@@ -253,7 +277,7 @@ export default function OnboardingReadinessWidget() {
   }, [deal, onboardingTask]);
 
   if (isInitializing) return <LoadingState />;
-  if (error) return <ErrorState message={error} />;
+  if (error) return <ErrorState message={error} details={diagnostics} />;
   if (!readiness) return <ErrorState message="The Deal record is unavailable." />;
 
   return (

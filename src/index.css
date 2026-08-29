@@ -1019,3 +1019,36 @@ button:focus-visible {
   color: #b91c1c;
   font-size: 0.82rem;
 }
+
+.diagnostics {
+  margin: 18px 0 0;
+  padding: 12px 14px;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: #f8fafc;
+  text-align: left;
+}
+
+.diagnostics__row {
+  display: grid;
+  grid-template-columns: 118px minmax(0, 1fr);
+  gap: 10px;
+  padding: 4px 0;
+}
+
+.diagnostics__row dt {
+  color: #6b7280;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.diagnostics__row dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: #374151;
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: 0.74rem;
+  line-height: 1.45;
+}
