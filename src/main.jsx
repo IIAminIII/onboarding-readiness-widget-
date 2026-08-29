@@ -1,7 +1,11 @@
 import { createRoot } from "react-dom/client";
 import App from "./App.jsx";
 import ErrorBoundary from "./components/ErrorBoundary.jsx";
+import { bootstrapZoho } from "./services/zohoBootstrap.js";
 import "./index.css";
+
+// Attach the PageLoad handler before React renders so no event can be missed.
+bootstrapZoho();
 
 const container = document.getElementById("root");
 

@@ -13,6 +13,10 @@ import {
   parseMissingFields,
 } from "../utils/readiness.js";
 import {
+  getBootstrapState,
+  subscribeToPageLoad,
+} from "../services/zohoBootstrap.js";
+import {
   getDealRecord,
   getReadinessRules,
   getRelatedTasks,
@@ -62,6 +66,7 @@ function collectDiagnostics() {
       label: "CRM.API",
       value: zoho?.CRM?.API ? "present" : "MISSING",
     },
+    { label: "SDK status", value: getBootstrapState().initStatus },
   ];
 }
 
@@ -160,18 +165,9 @@ export default function OnboardingReadinessWidget() {
   const pageLoadReceived = useRef(false);
 
   useEffect(() => {
-    // Register PageLoad before initializing the Zoho Embedded App SDK.
-    const zoho = getZohoSdk();
-    if (!zoho?.embeddedApp?.on || !zoho?.embeddedApp?.init) {
-      return undefined;
-    }
-
-    let timeoutId = 0;
-
-    zoho.embeddedApp.on("PageLoad", (pageData) => {
+    const handlePageLoad = ({ pageData }) => {
+      if (!pageData || pageLoadReceived.current) return;
       pageLoadReceived.current = true;
-      window.clearTimeout(timeoutId);
-      console.log("Onboarding Readiness PageLoad data:", pageData);
 
       if (pageData?.Entity !== "Deals") {
         setError(OUTSIDE_DEALS_ERROR);
@@ -188,35 +184,33 @@ export default function OnboardingReadinessWidget() {
 
       setDealId(recordId);
       fetchDeal(recordId);
-    });
+    };
 
-    try {
-      zoho.embeddedApp.init();
-      console.log("Onboarding Readiness SDK initialized, awaiting PageLoad…");
+    // The event may have arrived before this component mounted.
+    const unsubscribe = subscribeToPageLoad(handlePageLoad);
+    handlePageLoad(getBootstrapState());
 
-      timeoutId = window.setTimeout(() => {
-        if (pageLoadReceived.current) return;
+    if (!getBootstrapState().sdkAvailable) return unsubscribe;
 
-        const info = collectDiagnostics();
-        console.error(
-          "Onboarding Readiness: no PageLoad event after",
-          PAGE_LOAD_TIMEOUT_MS,
-          "ms.",
-          info,
-        );
-        setDiagnostics(info);
-        setError(PAGE_LOAD_TIMEOUT_ERROR);
-        setIsInitializing(false);
-      }, PAGE_LOAD_TIMEOUT_MS);
-    } catch (initializationError) {
-      console.error("Onboarding Readiness SDK initialization error:", initializationError);
-      queueMicrotask(() => {
-        setError("Zoho CRM SDK could not be initialized. Please reopen the widget.");
-        setIsInitializing(false);
-      });
-    }
+    const timeoutId = window.setTimeout(() => {
+      if (pageLoadReceived.current) return;
 
-    return () => window.clearTimeout(timeoutId);
+      const info = collectDiagnostics();
+      console.error(
+        "Onboarding Readiness: no PageLoad event after",
+        PAGE_LOAD_TIMEOUT_MS,
+        "ms.",
+        info,
+      );
+      setDiagnostics(info);
+      setError(PAGE_LOAD_TIMEOUT_ERROR);
+      setIsInitializing(false);
+    }, PAGE_LOAD_TIMEOUT_MS);
+
+    return () => {
+      unsubscribe();
+      window.clearTimeout(timeoutId);
+    };
   }, [fetchDeal]);
 
   const readiness = useMemo(() => {
